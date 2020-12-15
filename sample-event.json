@@ -1,0 +1,33 @@
+{
+    "subscription": {
+        "id": "8b97b961-8317-4c4b-bd56-809da71b9490",
+        "status": "enabled",
+        "type": "channel.channel_points_custom_reward_redemption.add",
+        "version": "1",
+        "condition": {
+            "broadcaster_user_id": "544451661",
+            "reward_id": ""
+        },
+        "transport": {
+            "method": "webhook",
+            "callback": "https://425bot.ngrok.io/twitch/points/OnChannelPointsRedeemed"
+        },
+        "created_at": "2020-12-15T02:21:49.849617994Z"
+    },
+    "event": {
+        "broadcaster_user_name": "425show",
+        "broadcaster_user_id": "544451661",
+        "id": "c0321b6a-fa0c-4152-8129-ccc013eacdd4",
+        "user_id": "544451661",
+        "user_name": "425show",
+        "user_input": "",
+        "status": "unfulfilled",
+        "redeemed_at": "2020-12-15T02:45:09.867723471Z",
+        "reward": {
+            "id": "62e3df62-655b-47df-9bfd-d6c963020d77",
+            "title": "Mute Christos for 30s",
+            "prompt": "Tired of hearing us? Mute Christos for 30 seconds",
+            "cost": 100
+        }
+    }
+}
