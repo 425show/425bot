@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using Microsoft.Azure.WebJobs.Extensions.SignalRService;
 
 namespace _425bot
 {
@@ -27,6 +28,14 @@ namespace _425bot
             _twitchAuthenticator = twitchAuthenticator;
             _config = config.Value;
             _log = loggerFactory.CreateLogger<ChannelPointsFunctions>();
+        }
+
+        [FunctionName("negotiate")]
+        public SignalRConnectionInfo GetSignalRInfo([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "twitch/negotiate")] HttpRequest req,
+            [SignalRConnectionInfo(HubName = "channelPoints")] SignalRConnectionInfo connectionInfo, ILogger log)
+        {
+            log.LogInformation($"Client negotiate: {connectionInfo.Url}, {connectionInfo.AccessToken}");
+            return connectionInfo;
         }
 
         [FunctionName("Authorize")]
@@ -75,7 +84,9 @@ namespace _425bot
         }
 
         [FunctionName("OnChannelPointsRedeemed")]
-        public async Task<IActionResult> OnChannelPointsRedeemed([HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = "twitch/points/OnChannelPointsRedeemed")] HttpRequest req)
+        public async Task<IActionResult> OnChannelPointsRedeemed([HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = "twitch/points/OnChannelPointsRedeemed")] HttpRequest req,
+            [SignalR(HubName = "channelPoints")] IAsyncCollector<SignalRMessage> obsMessages
+        )
         {
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             req.Body.Position = 0;
@@ -104,6 +115,7 @@ namespace _425bot
                 case "channel.channel_points_custom_reward_redemption.add":
                     // parse to type
                     _log.LogInformation($"{redemption.Event.UserName} redeemed {redemption.Event.Reward.Cost} points for {redemption.Event.Reward.Title}");
+                    await obsMessages.AddAsync(new SignalRMessage() { Target = "Redeemed", Arguments = new[] { redemption.Event.Reward.Title } });
                     break;
                 default:
                     _log.LogInformation(redemption.Subscription.Type);
@@ -112,5 +124,10 @@ namespace _425bot
 
             return new OkResult();
         }
+    }
+
+    public class ObsActivityMessage
+    {
+        public string Message { get; set; }
     }
 }
