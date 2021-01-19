@@ -1,30 +1,62 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.Azure.WebJobs.Extensions.Http;
 using System.Net.Http;
 using System.Text.Json;
 using System.Collections.Generic;
+using System.Security.Cryptography;
+using System.IO;
+using System.Text;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace _425bot
 {
-    public class TwitchAuthenticator
+    public interface ITwitchAuthenticator
+    {
+        string GenerateAuthorizationUrl();
+        Task<TwitchAccessTokenResponse> GetAccessTokenForAppAsync(string scope, bool force = false);
+        Task<TwitchAccessTokenResponse> GetAccessTokenForAppAsync(string[] scopes, bool force = false);
+        Task<ServiceResult<TwitchMessageResult>> AuthenticateMessage(Microsoft.AspNetCore.Http.HttpRequest req);
+    }
+
+    public class TwitchAuthenticatorConfig
+    {
+        public string ClientId { get; set; }
+        public string ClientSecret { get; set; }
+        public string RedirectUri { get; set; }
+        public string Scopes { get; set; }
+        public string VerifierSecret { get; set; }
+        public string BroadcasterId { get; set; }
+        public string ChannelPointsHandler { get; set; }
+    }
+
+    public class TwitchAuthenticator : ITwitchAuthenticator
     {
         private readonly string _clientId;
         private readonly string _clientSecret;
         private readonly HttpClient _client;
         private readonly IDictionary<string, TwitchAccessTokenResponse> _tokenCache;
+        private readonly TwitchAuthenticatorConfig _config;
+        private readonly ILogger<TwitchAuthenticator> _log;
 
-        public TwitchAuthenticator(string clientId, string secret) : this(new System.Net.Http.HttpClient(), clientId, secret) { }
+        public TwitchAuthenticator(IHttpClientFactory clientFactory, IOptions<TwitchAuthenticatorConfig> config, ILoggerFactory loggerFactory) : this(clientFactory.CreateClient(), config, loggerFactory) { }
 
-        public TwitchAuthenticator(IHttpClientFactory clientFactory, string clientId, string secret) : this(clientFactory.CreateClient(), clientId, secret) { }
-
-        public TwitchAuthenticator(HttpClient client, string clientId, string secret)
+        public TwitchAuthenticator(HttpClient client, IOptions<TwitchAuthenticatorConfig> config, ILoggerFactory loggerFactory)
         {
+            _log = loggerFactory.CreateLogger<TwitchAuthenticator>();
             _client = client;
-            _clientId = clientId;
-            _clientSecret = secret;
             _tokenCache = new Dictionary<string, TwitchAccessTokenResponse>();
+            _config = config.Value;
+            _clientId = _config.ClientId;
+            _clientSecret = _config.ClientSecret;
+        }
+
+        public string GenerateAuthorizationUrl()
+        {
+            var redirectUri = $"https://id.twitch.tv/oauth2/authorize?client_id={_config.ClientId}&redirect_uri={_config.RedirectUri}&response_type=token&scope={_config.Scopes}";
+            _log.LogInformation($"Redirecting to authorization: {redirectUri}");
+            return redirectUri;
         }
 
         public async Task<TwitchAccessTokenResponse> GetAccessTokenForAppAsync(string scope, bool force = false)
@@ -34,7 +66,6 @@ namespace _425bot
 
         public async Task<TwitchAccessTokenResponse> GetAccessTokenForAppAsync(string[] scopes, bool force = false)
         {
-            //POST https://id.twitch.tv/oauth2/token?client_id=uo6dggojyb8d6soh92zknwmi5ej1q2&client_secret=nyo51xcdrerl8z9m56w9w6wg&grant_type=client_credentials
             var existing = _tokenCache.Where(x => scopes.Contains(x.Key, StringComparer.OrdinalIgnoreCase));
             if (existing.Any() && existing.Any(a => a.Value.ExpirationTime > DateTime.UtcNow) && !force)
             {
@@ -56,5 +87,135 @@ namespace _425bot
             }
             return default;
         }
+
+        public async Task<ServiceResult<TwitchMessageResult>> AuthenticateMessage(Microsoft.AspNetCore.Http.HttpRequest req)
+        {
+            var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            req.Body.Position = 0;
+
+            // run verification routine
+            var messageId = req.Headers.ContainsKey("Twitch-Eventsub-Message-Id") ? req.Headers["Twitch-Eventsub-Message-Id"].ToString() : string.Empty;
+            var timestamp = req.Headers.ContainsKey("Twitch-Eventsub-Message-Timestamp") ? req.Headers["Twitch-Eventsub-Message-Timestamp"].ToString() : string.Empty;
+            // twitch states their verification is message id + timestamp + raw content bytes
+            var headerBytes = Encoding.UTF8.GetBytes(messageId + timestamp);
+
+            // validate signature from Twitch-Eventsub-Message-Signature
+            using var alg = new HMACSHA256(Encoding.UTF8.GetBytes(_config.VerifierSecret));
+            using var ms = new MemoryStream();
+            // first add the messageId/timestamp bytes
+            await ms.WriteAsync(headerBytes);
+            // make the sure the stream position is the end, so we write the rest after
+            ms.Position = ms.Length;
+            await req.Body.CopyToAsync(ms);
+
+            var computedHashBytes = alg.ComputeHash(ms.ToArray());
+            var sBuilder = new StringBuilder();
+
+            for (int i = 0; i < computedHashBytes.Length; i++)
+            {
+                sBuilder.Append(computedHashBytes[i].ToString("x2"));
+            }
+
+            var computedHash = sBuilder.ToString();
+            var sentHash = req.Headers.ContainsKey("Twitch-Eventsub-Message-Signature") ? req.Headers["Twitch-Eventsub-Message-Signature"].ToString().Split('=')[1] : string.Empty;
+            StringComparer comparer = StringComparer.OrdinalIgnoreCase;
+            var valid = comparer.Compare(computedHash, sentHash) == 0;
+
+            if (!valid) return ServiceResult<TwitchMessageResult>.FromError("Signature not valid");
+
+            return ServiceResult<TwitchMessageResult>.FromResult(new TwitchMessageResult()
+            {
+                MessageValidated = true,
+                Message = requestBody
+            });
+        }
+    }
+
+    public class TwitchMessageResult
+    {
+        public bool MessageValidated { get; set; }
+        public string Message { get; set; }
+    }
+
+    public class ServiceResult
+    {
+        public string Message { get; set; }
+        public bool Success { get; set; }
+        public string ErrorCode { get; set; }
+        public Exception Exception { get; set; }
+        public ServiceResult()
+        {
+
+        }
+        public static ServiceResult FromError(string message)
+        {
+            return new ServiceResult()
+            {
+                Message = message,
+                Success = false
+            };
+        }
+        public static ServiceResult FromError(Exception ex)
+        {
+            return new ServiceResult()
+            {
+                Message = ex.Message,
+                Exception = ex,
+                Success = false
+            };
+        }
+    }
+
+    public class ServiceResult<T> : ServiceResult
+    {
+        public T Value { get; set; }
+        public ServiceResult() { }
+
+        public ServiceResult(T value)
+        {
+            Value = value;
+            Success = true;
+        }
+
+        public static ServiceResult<T> FromResult(T value)
+        {
+            return new ServiceResult<T>(value);
+        }
+
+        public new static ServiceResult<T> FromError(string message)
+        {
+            return new ServiceResult<T>()
+            {
+                Message = message,
+                Success = false
+            };
+        }
+        public new static ServiceResult<T> FromError(Exception ex)
+        {
+            return new ServiceResult<T>()
+            {
+                Message = ex.Message,
+                Exception = ex,
+                Success = false
+            };
+        }
+
+        // public static ServiceResult FromError(string message)
+        // {
+        //     return new ServiceResult()
+        //     {
+        //         Message = message,
+        //         Success = false
+        //     };
+        // }
+        // public static ServiceResult FromError(Exception ex)
+        // {
+        //     return new ServiceResult()
+        //     {
+        //         Message = ex.Message,
+        //         Exception = ex,
+        //         Success = false
+        //     };
+        // }
     }
 }
