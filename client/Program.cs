@@ -10,8 +10,8 @@ namespace client
     {
         static void Main(string[] args)
         {
-            // var a = new ObsClient();
-            // a.Connect("ws://localhost:4444", "");
+            var a = new ObsClient();
+            a.Connect("ws://localhost:4444", "");
             // a.Mute("Christos A/V");
             var sr = new ServiceClient();
             Console.ReadLine();
@@ -46,6 +46,10 @@ namespace client
             {
                 var newMessage = $"{message}";
                 Console.WriteLine(newMessage);
+                switch (newMessage)
+                {
+                    
+                }
             });
         }
     }
@@ -70,9 +74,10 @@ namespace client
 
         public void Mute(string name)
         {
-            // Console.WriteLine($"is muted: {_obs.GetMute(name)}");
-            // _obs.SetMute("Christos A/V", !_obs.GetMute(name));
-            // Console.WriteLine($"is muted: {_obs.GetMute(name)}");
+            Console.WriteLine($"is muted: {_obs.GetMute(name)}");
+            _obs.SetMute(name, !_obs.GetMute(name));
+            // identity noir --> smokey, old detective show
+            Console.WriteLine($"is muted: {_obs.GetMute(name)}");
         }
     }
 }
