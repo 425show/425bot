@@ -13,7 +13,7 @@ namespace client
             var a = new ObsClient();
             a.Connect("ws://localhost:4444", "");
             // a.Mute("Christos A/V");
-            var sr = new ServiceClient();
+            var sr = new ServiceClient(a);
             Console.ReadLine();
         }
     }
@@ -21,10 +21,13 @@ namespace client
     public class ServiceClient
     {
         private readonly HubConnection _connection;
-        public ServiceClient()
+        private readonly ObsClient _obs;
+
+        public ServiceClient(ObsClient obs)
         {
+            _obs = obs;
             _connection = new HubConnectionBuilder()
-                .WithUrl("https://425bot.ngrok.io/twitch")
+                .WithUrl("https://425bot.azurewebsites.net/twitch")
                 .WithAutomaticReconnect()
                 .Build();
             this.Init().Wait();
@@ -48,7 +51,20 @@ namespace client
                 Console.WriteLine(newMessage);
                 switch (newMessage)
                 {
-                    
+                    case "Mute Christos for 30s":
+                        {
+                            Task.Run(() => _obs.Mute("Christos A/V"));
+                            break;
+                        }
+                    case "Mute JPD for 30s":
+                        {
+                            Task.Run(() => _obs.Mute("Yeti Blue"));
+                            break;
+                        }
+                    default:
+                        {
+                            break;
+                        }
                 }
             });
         }
@@ -69,15 +85,22 @@ namespace client
 
         public void Connect(string server, string pass)
         {
-            //_obs.Connect(server, pass);
+            _obs.Connect(server, pass);
         }
 
-        public void Mute(string name)
+        public async Task Mute(string name)
         {
-            Console.WriteLine($"is muted: {_obs.GetMute(name)}");
+            Console.WriteLine($"{name}; is muted: {_obs.GetMute(name)}");
             _obs.SetMute(name, !_obs.GetMute(name));
+            _obs.SetSourceRender($"{name} - Mute", true);
+            _obs.TransitionToProgram(-1, "Cut");
             // identity noir --> smokey, old detective show
-            Console.WriteLine($"is muted: {_obs.GetMute(name)}");
+            Console.WriteLine($"{name}; is muted: {_obs.GetMute(name)}...waiting 30 seconds");
+            await Task.Delay(30000);
+            Console.WriteLine($"times up - unmuting {name}");
+            _obs.SetSourceRender($"{name} - Mute", false);
+            _obs.TransitionToProgram(-1, "Cut");
+            _obs.SetMute(name, !_obs.GetMute(name));
         }
     }
 }
