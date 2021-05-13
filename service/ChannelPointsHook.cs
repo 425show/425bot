@@ -109,7 +109,7 @@ namespace _425bot
                 };
             }
 
-            var redemption = JsonSerializer.Deserialize<ChannelPointRedeemedEventSubscription>(message.Value.Message, _ignoreNullJsonOptions);
+            var redemption = JsonSerializer.Deserialize<EventSubscription<ChannelPointsRedeemedEvent>>(message.Value.Message, _ignoreNullJsonOptions);
             switch (redemption.Subscription.Type)
             {
                 case "channel.channel_points_custom_reward_redemption.add":

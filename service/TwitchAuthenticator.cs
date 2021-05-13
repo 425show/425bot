@@ -14,8 +14,9 @@ namespace _425bot
 {
     public interface ITwitchAuthenticator
     {
-        string GenerateAuthorizationUrl();
+        string GenerateAuthorizationUrl(string scopes = null);
         Task<TwitchAccessTokenResponse> GetAccessTokenForAppAsync(string scope, bool force = false);
+        Task<TwitchAccessTokenResponse> GetAccessTokenForAppAsync(bool force = false);
         Task<TwitchAccessTokenResponse> GetAccessTokenForAppAsync(string[] scopes, bool force = false);
         Task<ServiceResult<TwitchMessageResult>> AuthenticateMessage(Microsoft.AspNetCore.Http.HttpRequest req);
     }
@@ -29,6 +30,7 @@ namespace _425bot
         public string VerifierSecret { get; set; }
         public string BroadcasterId { get; set; }
         public string ChannelPointsHandler { get; set; }
+        public string StreamStatusHandler { get; internal set; }
     }
 
     public class TwitchAuthenticator : ITwitchAuthenticator
@@ -52,9 +54,9 @@ namespace _425bot
             _clientSecret = _config.ClientSecret;
         }
 
-        public string GenerateAuthorizationUrl()
+        public string GenerateAuthorizationUrl(string scopes = null)
         {
-            var redirectUri = $"https://id.twitch.tv/oauth2/authorize?client_id={_config.ClientId}&redirect_uri={_config.RedirectUri}&response_type=token&scope={_config.Scopes}";
+            var redirectUri = $"https://id.twitch.tv/oauth2/authorize?client_id={_config.ClientId}&redirect_uri={_config.RedirectUri}&response_type=token&scope={scopes ?? _config.Scopes}";
             _log.LogInformation($"Redirecting to authorization: {redirectUri}");
             return redirectUri;
         }
@@ -62,6 +64,11 @@ namespace _425bot
         public async Task<TwitchAccessTokenResponse> GetAccessTokenForAppAsync(string scope, bool force = false)
         {
             return await GetAccessTokenForAppAsync(new[] { scope }, force);
+        }
+
+        public async Task<TwitchAccessTokenResponse> GetAccessTokenForAppAsync(bool force = false)
+        {
+            return await GetAccessTokenForAppAsync(new string[] { }, force);
         }
 
         public async Task<TwitchAccessTokenResponse> GetAccessTokenForAppAsync(string[] scopes, bool force = false)

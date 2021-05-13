@@ -39,15 +39,15 @@ namespace _425bot
         public string Secret { get; set; }
     }
 
-    public class ChannelPointRedeemedEventSubscription
+    public class EventSubscription<T> where T : Event
     {
         [JsonPropertyName("subscription")]
         public Subscription Subscription { get; set; }
         [JsonPropertyName("event")]
-        public ChannelPointsRedeemedEvent Event { get; set; }
+        public T Event { get; set; }
     }
 
-    public class ChannelPointsRedeemedEvent
+    public class Event
     {
         [JsonPropertyName("broadcaster_user_id")]
         public string BroadcasterUserId { get; set; }
@@ -60,7 +60,10 @@ namespace _425bot
 
         [JsonPropertyName("id")]
         public string Id { get; set; }
+    }
 
+    public class ChannelPointsRedeemedEvent : Event
+    {
         [JsonPropertyName("user_id")]
         public string UserId { get; set; }
 
@@ -97,4 +100,14 @@ namespace _425bot
         [JsonPropertyName("cost")]
         public int Cost { get; set; }
     }
+
+    public class StreamStartEvent : Event
+    {
+        [JsonPropertyName("type")]
+        public string Type { get; set; }
+
+        [JsonPropertyName("started_at")]
+        public string StartedAt { get; set; }
+    }
+
 }
